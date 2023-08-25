@@ -14,6 +14,7 @@ using NetworkEvent = Unity.Networking.Transport.NetworkEvent;
 using TMPro;
 using System;
 using System.Threading.Tasks;
+using Unity.VisualScripting;
 
 public class GameNetworkManager : MonoBehaviour
 {
@@ -31,6 +32,27 @@ public class GameNetworkManager : MonoBehaviour
     private string _playerID;
     private bool _clientAuthenticated = false;
     private string _joincode;
+
+    private async void Start()
+    {
+        await AuthenticatePlayer();
+    }
+    async Task AuthenticatePlayer()
+    {
+        try
+        {
+            await UnityServices.InitializeAsync();
+            await AuthenticationService.Instance.SignInAnonymouslyAsync();
+            _playerID = AuthenticationService.Instance.PlayerId;
+            _clientAuthenticated = true;
+            _playerIDtext.text = $"Client Authentication successful - {_playerID}";
+        }
+        catch (Exception e)
+        {
+
+            Debug.Log(e);
+        }
+    }
 
     public async Task<RelayServerData> AllocateRelayServerAndCode(int MaxConnections, string region = null) 
     {
@@ -67,7 +89,7 @@ public class GameNetworkManager : MonoBehaviour
         {
             allocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
         }
-        catch (Exception)
+        catch (Exception e)
         {
             Debug.Log($"Relay allocation join request failed -{e}");
             throw;
@@ -93,21 +115,88 @@ public class GameNetworkManager : MonoBehaviour
         {
             Debug.LogError($"Cant start the server due to an exception {allocateAndGetCode.Exception.Message}");
         }
+
+        var relayServerdate = allocateAndGetCode.Result;
+
+        NetworkManager.Singleton.GetComponent<UnityTransport>().SetRelayServerData(relayServerdate);
+        NetworkManager.Singleton.StartHost();
+
+        _joinCodeText.gameObject.SetActive(true);
+        _joinCodeText.text = _joincode;
+        _statusTxt.text = "Join As Host";
+
+    }
+
+    IEnumerator ConfigureUseCodeAndJoinClient(string joinCode)
+    {
+        var joinAllocationFromCode = JoinRelayServerWithCode(joinCode);
+        while (!joinAllocationFromCode.IsCompleted)
+        {
+            //Wait until we create the Allocation and get code
+            yield return null;
+        }
+        if (joinAllocationFromCode.IsFaulted)
+        {
+            Debug.LogError($"Cant join the server due to an exception {joinAllocationFromCode.Exception.Message}");
+        }
+
+        var relayServerdate = joinAllocationFromCode.Result;
+
+        NetworkManager.Singleton.GetComponent<UnityTransport>().SetRelayServerData(relayServerdate);
+        NetworkManager.Singleton.StartClient();
+
+        _statusTxt.text = "Join As Client";
     }
     public void JoinHost()
     {
-        NetworkManager.Singleton.StartHost();
-        _statusTxt.text = "Joined as Host";
+        if (!_clientAuthenticated)
+        {
+            Debug.Log("client not Authenticated. Please try again");
+            return;
+        }
+
+        StartCoroutine(ConfigureGetCodeAndJoinHost());
+
+        _btnClient.gameObject.SetActive(false);
+        _btnHost.gameObject.SetActive(false);
+        _joinCodeText.gameObject.SetActive(false);
+        //NetworkManager.Singleton.StartHost();
+        //_statusTxt.text = "Joined as Host";
     }
 
     public void JoinClient()
     {
-        NetworkManager.Singleton.StartClient();
-        _statusTxt.text = "Joined as Client";
+        if (!_clientAuthenticated)
+        {
+            Debug.Log("client not Authenticated. Please try again");
+            return;
+        }
+
+        if(_joinCodeText.text.Length <= 0)
+        {
+            Debug.Log($"Please Enter a Proper join code");
+            _statusTxt.text = "please enter a proper join code";
+        }
+
+        Debug.Log($"The join code is: {_joinCodeText.text}");
+        StartCoroutine(ConfigureUseCodeAndJoinClient(_joinCodeText.text));
+
+
+        _btnClient.gameObject.SetActive(false);
+        _btnHost.gameObject.SetActive(false);
+        _joinCodeText.gameObject.SetActive(false);
+
+        //NetworkManager.Singleton.StartClient();
+        //_statusTxt.text = "Joined as Client";
     }
 
     public void JoinServer()
     {
+        if (!_clientAuthenticated)
+        {
+            Debug.Log("client not Authenticated. Please try again");
+            return;
+        } 
         NetworkManager.Singleton.StartServer();
         _statusTxt.text = "Joined as Server";
     }
