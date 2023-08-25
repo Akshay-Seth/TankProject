@@ -60,6 +60,40 @@ public class GameNetworkManager : MonoBehaviour
         return new RelayServerData(allocation, "dtls");
     }
 
+    public async Task<RelayServerData> JoinRelayServerWithCode(string joinCode)
+    {
+        JoinAllocation allocation;
+        try
+        {
+            allocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
+        }
+        catch (Exception)
+        {
+            Debug.Log($"Relay allocation join request failed -{e}");
+            throw;
+        }
+
+        Debug.Log($"Client: {allocation.ConnectionData[0]} {allocation.ConnectionData[1]}");
+        Debug.Log($"Host: {allocation.HostConnectionData[0]} {allocation.HostConnectionData[1]}");
+        Debug.Log($"Client: {allocation.AllocationId}");
+
+        return new RelayServerData(allocation, "dtls");
+    }
+
+    IEnumerator ConfigureGetCodeAndJoinHost()
+    {
+        //run the task to get code and join as host
+        var allocateAndGetCode = AllocateRelayServerAndCode(_maxConnections);
+        while(!allocateAndGetCode.IsCompleted)
+        {
+            //Wait until we create the Allocation and get code
+            yield return null;
+        }
+        if (allocateAndGetCode.IsFaulted)
+        {
+            Debug.LogError($"Cant start the server due to an exception {allocateAndGetCode.Exception.Message}");
+        }
+    }
     public void JoinHost()
     {
         NetworkManager.Singleton.StartHost();
